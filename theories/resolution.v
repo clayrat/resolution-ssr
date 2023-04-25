@@ -25,10 +25,10 @@ End ReflectConnectives.
 Section Eqset.
 Context {A : eqType}.
 
-Definition eqset (l1 l2 : seq A) : bool :=
-  all [in l2] l1 && all [in l1] l2.
+Definition eqset (s1 s2 : seq A) : bool :=
+  all [in s2] s1 && all [in s1] s2.
 
-Lemma eqsetP (l1 l2 : seq A) : reflect (l1 =i l2) (eqset l1 l2).
+Lemma eqsetP (s1 s2 : seq A) : reflect (s1 =i s2) (eqset s1 s2).
 Proof.
 rewrite /eqset; apply: (iffP andP).
 - case=>/allP A1 /allP A2 x.
@@ -48,15 +48,15 @@ move=>x y z /eqsetP Hyx /eqsetP Hxz; apply/eqsetP => q.
 by rewrite Hyx.
 Qed.
 
-Notation eqsetl l1 l2 := (eqset l1 =1 eqset l2).
+Notation eqsetl s1 s2 := (eqset s1 =1 eqset s2).
 
-Lemma eqsetPl l1 l2 : reflect (eqsetl l1 l2) (eqset l1 l2).
+Lemma eqsetPl s1 s2 : reflect (eqsetl s1 s2) (eqset s1 s2).
 Proof.
 apply: (iffP idP).
 - move=>H q; apply/idP/idP.
   - by rewrite eqset_sym in H; apply: eqset_trans.
   by apply: eqset_trans.
-by move=>/(_ l2)=>->; apply: eqset_id.
+by move=>/(_ s2)=>->; apply: eqset_id.
 Qed.
 
 Lemma eqset_catC s1 s2 : eqsetl (s1 ++ s2) (s2 ++ s1).
@@ -68,8 +68,11 @@ Proof. by move/eqsetP=>H12; apply/eqsetP=>q; rewrite !inE H12. Qed.
 Lemma eqset_cons2 x s : eqsetl (x::x::s) (x::s).
 Proof. by apply/eqsetPl/eqsetP=>q; rewrite !inE orbA orbb. Qed.
 
-Lemma eqset_catCA l1 l2 l3 : eqsetl (l1 ++ l2 ++ l3) (l2 ++ l1 ++ l3).
+Lemma eqset_catCA s1 s2 s3 : eqsetl (s1 ++ s2 ++ s3) (s2 ++ s1 ++ s3).
 Proof. by apply/eqsetPl/eqsetP=>q; rewrite !mem_cat orbCA. Qed.
+
+Lemma eqset_perm s1 s2 : perm_eq s1 s2 -> eqset s1 s2.
+Proof. by move=>H; apply/eqsetP/perm_mem. Qed.
 
 End Eqset.
 
@@ -95,6 +98,12 @@ Qed.
 
 Canonical lit_eqMixin := EqMixin eqlitP.
 Canonical lit_eqType := Eval hnf in EqType lit lit_eqMixin.
+
+Definition projLit (l : lit) : nat :=
+  match l with
+  | pos n => n
+  | neg n => n
+  end.
 
 Definition notLit (l : lit) : lit :=
   match l with
@@ -149,6 +158,9 @@ Definition valForm (f : form) (v : val) : bool :=
 
 Definition satisfiable (f : form) : Type := { v : val | valForm f v }.
 
+Lemma satisfiable0 : satisfiable [::].
+Proof. by exists [::]. Qed.
+
 Inductive resol : Type := leaf of clause | node of lit & clause & resol & resol.
 
 Definition exTree : resol :=
@@ -199,12 +211,8 @@ Proof. by []. Qed.
 
 Definition exRes : res := exist _ exTree exTree_correct.
 
-(* subL clause eqC f1 f2 checks whether f1 is a subset of f2 *)
-(* projl_sig, given a resolution, returns the underlying tree.
-So proji_sig exRes = exTree. *)
 Definition corresponds (r : resol) (f : form) : bool :=
   all
-    (* we treat clauses as multisets which might be an overkill *)
     (fun x => has (perm_eq x) f)
     (premises r).
 
@@ -309,8 +317,8 @@ Fixpoint percolate0 (r : resol) (a : clause) (l : lit) : resol * bool :=
       let cr :=
         match (p1.2, p2.2) with
         | (true , true ) => (c, true)
-        | (true , false) => if resL == notLit l then (c, true) else ((l::c), false)
-        | (false, true ) => if resL == l then (c, true) else ((l::c), false)
+        | (true , false) => if resL == notLit l then (c, true) else (l::c, false)
+        | (false, true ) => if resL == l then (c, true) else (l::c, false)
         | (false, false) => ((l::c), false)
         end in
      (node resL cr.1 p1.1 p2.1, cr.2)
@@ -327,7 +335,23 @@ Proof.
 case: r=>[c|r c r1 r2] /=; first by case: ifP=>_ /= [<-<-].
 by case: ifP=>_; case: ifP=>_ /= [<-<-] //=; case: ifP.
 Qed.
+(*
+Lemma percolatePremisesT r a l re :
+  percolate0 r a l = (re, true) ->
+  premises re = premises r.
+Proof.
+rewrite /percolate; elim: r=>[c|r c r1 IH1 r2 IH2] /= in re *.
+- by case: ifP=>_ /=; case=>// <-.
+case E1: (percolate0 r1 a l)=>[re1 b1] /=.
+case E2: (percolate0 r2 a l)=>[re2 b2] /=.
+case=><- /=; case: b2 E2; case: b1 E1=>//= H1 H2.
+- by move=>_; rewrite (IH1 _ H1) (IH2 _ H2).
+- case: eqVneq=>//= _ _. rewrite (IH1 _ H1) (IH2 _ H2).
 
+case: ifP=>_ /=; case: ifP=>_ /=; case=>// <- /=.
+
+  Set Printing All.
+*)
 Lemma percolateCorrect (r : resol) (a : clause) (l : lit) :
   correctR r -> correctR (percolate r a l).
 Proof.
@@ -363,7 +387,11 @@ Fixpoint graft (r s : resol) : resol :=
   | leaf c => if perm_eq (clauseR s) c then s else r
   | node l c r1 r2 => node l c (graft r1 s) (graft r2 s)
   end.
-(*
+
+Lemma graftClauseR (r s : resol) :
+  perm_eq (clauseR (graft r s)) (clauseR r).
+Proof. by elim: r=>[c|r c r1 IH1 r2 IH2] //=; case: ifP. Qed.
+
 Lemma graftCorrect r s :
   correctR r -> correctR s -> correctR (graft r s).
 Proof.
@@ -373,6 +401,163 @@ case/and5P=>H1 H2 Hr Hnr Hp Hs.
 apply/and5P; split.
 - by apply: IH1.
 - by apply: IH2.
-*)
+- by rewrite (perm_mem (graftClauseR r1 s)).
+- by rewrite (perm_mem (graftClauseR r2 s)).
+apply: eqset_trans; first by exact: Hp.
+by apply/eqset_perm/perm_cat;
+  apply: perm_filter; rewrite perm_sym; exact: graftClauseR.
+Qed.
+
+(* TODO bigop? *)
+Fixpoint measure (f : form) : nat :=
+  if f is x::xs then (size x).-1 + measure xs else 0.
+
+Lemma measure_filt f c : measure f = measure (filter (predC1 c) f) + (count_mem c f) * (size c).-1.
+Proof.
+elim: f=>/= [|x f IH]; first by rewrite mul0n.
+case: eqVneq=>/= [{x}->|Nx]; last first.
+- by rewrite add0n IH addnA.
+by rewrite mulnDl mul1n [RHS]addnCA IH.
+Qed.
+
+Definition oneLit (f : form) : bool :=
+  all (fun c => size c <= 1) f.
+
+Lemma l0 f : measure f == 0 -> oneLit f.
+Proof.
+elim: f=>//=c f IH.
+by rewrite addn_eq0 -subn1 subn_eq0; case/andP=>-> /IH.
+Qed.
+
+Lemma measureS f : 0 < measure f -> {c : clause | (c \in f) /\ (2 <= size c)}.
+Proof.
+elim: f=>//=c f IH; rewrite addn_gt0 -subn1 subn_gt0.
+case: (posnP (measure f)).
+- by rewrite orbF=>_ Hc; exists c; rewrite inE eqxx.
+case/IH=>c' [H' S'] _.
+by exists c'; rewrite inE S' H' orbT.
+Qed.
+
+Definition fPred (f : form) : Type :=
+  satisfiable f + {r : resol | correctR r && refutes r f}.
+
+Lemma l3 f : oneLit f -> fPred f.
+Proof.
+elim: f=>[|c f IH]/=.
+- by move=>_; left; exact: satisfiable0.
+case/andP=>Hc /[dup] Ho /IH; case=>{IH}; case; last first.
+- (* f is unsatisfiable *)
+  move=>r; case/andP=>Hr Hf.
+  right; exists r; rewrite Hr /=.
+  move: Hf; rewrite /refutes /corresponds /=; case/andP=>A ->; rewrite andbT.
+  by apply: sub_all A=>q ->; rewrite orbT.
+(* f is satisfiable *)
+move=>v Hv; case: c Hc=>/= [_|l].
+- by right; exists (leaf [::]).
+case=>//= _.
+case: (boolP ([::notLit l] \in f))=>Hnl.
+- right; exists (node l [::] (leaf [::l]) (leaf [::notLit l]))=>/=.
+  rewrite !inE !eqxx /= /refutes /= andbT /corresponds /= andbT perm_refl /=.
+  by apply/orP; right; apply/hasP; exists [:: notLit l].
+case: (boolP ([::l] \in f))=>Hl.
+- left; exists v=>/=; rewrite orbF Hv andbT.
+  by move/allP: Hv=>/(_ _ Hl); case/hasP=>x; rewrite inE=>/eqP->.
+left; case: l Hnl Hl=>/= n H1 H2.
+- exists (if n \in v then v else n::v)=>/=; rewrite orbF.
+  case: (boolP (n \in v))=>[->|Nv] //.
+  rewrite inE eqxx /=.
+  congr (_ = _): Hv; apply: eq_in_all=>c Hc.
+  apply/idP/idP; case/hasP=>x Hx Hv; apply/hasP; exists x=>//;
+    case: x Hx Hv=>/= m Hm; rewrite inE ?negb_or.
+  - by move=>->; rewrite orbT.
+  - move=>->; rewrite andbT.
+    apply: contraNneq H1 => <-.
+    move/allP: Ho=>/(_ _ Hc); case: c Hc Hm=>//= l'; case=>//= H'.
+    by rewrite inE=>/eqP->.
+  - case/orP=>[/eqP Em|] //; rewrite {m}Em in Hm *.
+    move/allP: Ho=>/(_ _ Hc); case: c Hc Hm=>//= l'; case=>//= H' + _.
+    by rewrite inE=>/eqP E'; rewrite E' H' in H2.
+  by case/andP.
+exists (filter (predC1 n) v)=>/=; rewrite orbF mem_filter /= eqxx /=.
+congr (_ = _): Hv; apply: eq_in_all=>c Hc.
+apply/idP/idP; case/hasP=>x Hx Hv; apply/hasP; exists x=>//;
+  case: x Hx Hv=>/= m Hm; rewrite mem_filter /= ?negb_and ?negbK.
+- move=>->; rewrite andbT.
+  apply: contraNneq H1 => <-.
+  move/allP: Ho=>/(_ _ Hc); case: c Hc Hm=>//= l'; case=>//= H'.
+  by rewrite inE=>/eqP->.
+- by move=>->; rewrite orbT.
+- by case/andP.
+case/orP=>[/eqP Em|] //; rewrite {m}Em in Hm *.
+move/allP: Ho=>/(_ _ Hc); case: c Hc Hm=>//= l'; case=>//= H' + _.
+by rewrite inE=>/eqP E'; rewrite E' H' in H2.
+Qed.
+
+Lemma nseq_filter_pred1 {A : eqType} (z : A) s :
+  filter (pred1 z) s = nseq (count_mem z s) z.
+Proof.
+elim: s=>//= x s IH.
+by case: eqVneq=>[->|N] /=; rewrite IH.
+Qed.
+
+Theorem t f : fPred f.
+Proof.
+move: {2}(measure f) (eqxx (measure f))=>n.
+elim/ltn_ind: n f; case=>[_|n IH] f; first by move/l0/l3.
+move/eqP=>Hm; rewrite -Hm in IH.
+move: (measureS f); rewrite {}Hm=>/(_ erefl).
+case; case=>/= [[]|l1] //; case=>/= [|l2 c] [] // Hf _.
+set c' := l1::l2::c.
+have Hc' : 0 < count_mem c' f.
+- by move: Hf; rewrite -has_pred1 has_count.
+set D : form := filter (predC1 c') f.
+have Hpf : perm_eq f (D ++ nseq (count_mem c' f) c').
+- rewrite perm_sym; move/permPl: (perm_filterC (predC1 c') f)=>Hp.
+  apply/perm_trans/Hp; rewrite /D perm_cat2l.
+  have -> : [seq x <- f | predC (predC1 c') x] = [seq x <- f | (pred1 c') x].
+  - by apply: eq_filter=>z /=; rewrite negbK.
+  by rewrite nseq_filter_pred1.
+set f1 := [::l1] :: D.
+set f2 := (l2::c) :: D.
+have M1: measure f1 < measure f.
+- rewrite /f1 /= add0n /D (measure_filt f c').
+  by rewrite -[ltnLHS]addn0 ltn_add2l muln_gt0 /= andbT.
+move: (IH _ M1 f1); rewrite eqxx=>/(_ erefl); case.
+- (* f1 is satisfiable *)
+  case=>v V1; left; exists v.
+  move: V1; rewrite /f1 /= orbF; case/andP=>V1 VD.
+  have VC: valClause c' v by rewrite /= V1.
+  by rewrite /valForm (perm_all _ Hpf) all_cat -/(valForm D v) VD /= all_nseq VC orbT.
+(* f1 is refutable *)
+case=>r1 /andP [Hcr1 Hfr1].
+have M2: measure f2 < measure f.
+- rewrite /f2 /= /D  (measure_filt f c') addnC ltn_add2l /c' /=.
+  apply: (leq_ltn_trans (n:=count_mem [:: l1, l2 & c] f * (size c))).
+  - by rewrite -[leqLHS]mul1n leq_mul2r Hc' orbT.
+  by rewrite mulnS  -[ltnLHS]add0n ltn_add2r.
+move: (IH _ M2 f2); rewrite eqxx=>/(_ erefl); case.
+- (* f2 is satisfiable *)
+  case=>v V2; left; exists v.
+  move: V2; rewrite /f2 /=; case/andP=>V2 VD.
+  have VC: valClause c' v by rewrite /= V2 orbT.
+  by rewrite /valForm (perm_all _ Hpf) all_cat -/(valForm D v) VD /= all_nseq VC orbT.
+(* f2 is refutable *)
+case=>r2 /andP [Hcr2 Hfr2].
+case E: (percolate0 r2 (l2::c) l1)=>[rp b].
+move/percolateClauseR: (E).
+move: E; rewrite (surjective_pairing (percolate0 _ _ _)); case=>Er Eb.
+case/andP: Hfr2=>Hcc /nilP ->; case: b Eb=>Eb Hcr.
+- right; exists rp.
+  rewrite -Er -/(percolate r2 (l2::c) l1) in Hcr *.
+  apply/andP; split; first by apply: percolateCorrect.
+  apply/andP; split; last by rewrite Hcr.
+
+  rewrite /corresponds /= in Hcc *.
+  apply/allP=>q Hq.
+  rewrite (perm_has _ Hpf) has_cat has_nseq Hc' /=.
+
+
+set rp := percolate r2 (l2::c) l1.
+c
 
 End Resolution.
