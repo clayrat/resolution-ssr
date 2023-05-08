@@ -2,4 +2,8 @@
 -arg -w -arg -notation-overridden
 -arg -w -arg -redundant-canonical-projection
 
-theories/resolution.v
+theories/prelude.v
+theories/decset.v
+theories/model.v
+theories/constable.v
+theories/saturne.v
