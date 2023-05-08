@@ -28,21 +28,34 @@ Definition eval_form (f : form) (v : assign) : bool :=
 
 Notation "[| p | e |]" := (eval_form p e).
 
+Definition mem_form (f : form) (c : clause) : bool := has (eqset c) f.
+
+Lemma in_mem_form f c : c \in f -> mem_form f c.
+Proof. by move=>H; apply/hasP; exists c=>//; apply: eqset_id. Qed.
+
+Lemma eval_true_forall f m c : valForm f m -> mem_form f c -> valClause c m.
+Proof.
+elim: f=>//=c' f IH.
+case/andP=>Hc /IH {}IH; case/orP.
+- by move/valClause_equiv=>->.
+by apply: IH.
+Qed.
+
 Definition sat (f : form) : Prop := exists v : val, valForm f v.
 
 Definition unsat (f : form) := ~ sat f.
 
 Variant resolvent : form -> clause -> Prop :=
-  | resolvent_mem (f : form) (c : clause) : c \in f -> resolvent f c
+  | resolvent_mem (f : form) (c : clause) : mem_form f c -> resolvent f c
   | resolvent_cut (f : form) (c1 c2 : clause) (l : lit) :
-    l::c1 \in f ->
-    notLit l::c2 \in f -> resolvent f (c1 ++ c2).
+    mem_form f (l::c1) ->
+    mem_form f (notLit l::c2) -> resolvent f (c1 ++ c2).
 
-Lemma clause_set_clause_true m f c :
-  c \in f ->
+Corollary clause_set_clause_true m f c :
+  mem_form f c ->
   valForm f m ->
   valClause c m.
-Proof. by move=>H /allP/(_ _ H). Qed.
+Proof.  by move/[swap]/eval_true_forall; apply. Qed.
 
 Theorem resolvent_sound m f c :
   resolvent f c ->
@@ -95,10 +108,10 @@ Definition conclusion (ut : proof_step) : clause :=
 
 Definition is_proof_step (context : form) (ut : proof_step) : bool :=
   match ut with
-  | proof_mem c => c \in context
+  | proof_mem c => mem_form context c
   | proof_cut l c1 c2 =>
-    (neg l::c1 \in context) &&
-    (pos l::c2 \in context)
+    mem_form context (neg l::c1) &&
+    mem_form context (pos l::c2)
   end.
 
 Lemma is_proof_step_sound' ctx ut :
@@ -119,7 +132,7 @@ Fixpoint is_proof (context : form) (uts : seq proof_step) (c : clause) : bool :=
   if uts is ut::uts' then
     is_proof_step context ut &&
     is_proof ((conclusion ut)::context) uts' c
-  else c \in context.
+  else mem_form context c.
 
 Lemma is_proof_sound' uts ctx c :
   is_proof ctx uts c ->

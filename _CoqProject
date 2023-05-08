@@ -5,5 +5,6 @@
 theories/prelude.v
 theories/decset.v
 theories/model.v
+theories/cnf.v
 theories/constable.v
 theories/saturne.v

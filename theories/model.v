@@ -61,13 +61,19 @@ apply/hasP; exists x=>//.
 by apply: Hs.
 Qed.
 
-Lemma eqset_equiv c1 c2 : eqset c1 c2 -> forall m, valClause c1 m = valClause c2 m.
+Lemma valClause_equiv c1 c2 v : eqset c1 c2 -> valClause c1 v = valClause c2 v.
 Proof.
-move/eqsetP=>H m.
+move/eqsetP=>H.
 by apply/idP/idP; apply: valClause_sub=>x; rewrite H.
 Qed.
 
+Corollary valClause_cat c1 c2 v : valClause (c1 ++ c2) v = valClause c1 v || valClause c2 v.
+Proof. by rewrite /valClause has_cat. Qed.
+
 Definition valForm (f : form) (v : val) : bool :=
   all (valClause^~ v) f.
+
+Corollary valForm_cat c1 c2 v : valForm (c1 ++ c2) v = valForm c1 v && valForm c2 v.
+Proof. by rewrite /valForm all_cat. Qed.
 
 End Model.
