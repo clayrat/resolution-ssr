@@ -3,22 +3,11 @@ From resssr Require Import prelude decset model.
 
 Section SaturneResolution.
 
-Definition mem_form (f : form) (c : clause) : bool := has (eqset c) f.
-
-Lemma in_mem_form f c : c \in f -> mem_form f c.
-Proof. by move=>H; apply/hasP; exists c=>//; apply: eqset_id. Qed.
-
-Lemma eval_true_forall f m c : valForm f m -> mem_form f c -> valClause c m.
-Proof.
-elim: f=>//=c' f IH.
-case/andP=>Hc /IH {}IH; case/orP.
-- by move/valClause_equiv=>->.
-by apply: IH.
-Qed.
-
 Definition sat (f : form) : Prop := exists v : val, valForm f v.
 
 Definition unsat (f : form) := ~ sat f.
+
+Definition mem_form (f : form) (c : clause) : bool := has (eqset c) f.
 
 Variant resolvent : form -> clause -> Prop :=
   | resolvent_mem (f : form) (c : clause) : mem_form f c -> resolvent f c
@@ -26,27 +15,30 @@ Variant resolvent : form -> clause -> Prop :=
     mem_form f (l::c1) ->
     mem_form f (notLit l::c2) -> resolvent f (c1 ++ c2).
 
-Corollary clause_set_clause_true m f c :
+Lemma clause_set_clause_true m f c :
   mem_form f c ->
   valForm f m ->
   valClause c m.
-Proof.  by move/[swap]/eval_true_forall; apply. Qed.
+Proof.
+elim: f=>//=c' f IH /[swap].
+case/andP=>Hc /IH {}IH; case/orP.
+- by move/valClause_equiv=>->.
+by apply: IH.
+Qed.
 
 Theorem resolvent_sound m f c :
   resolvent f c ->
   valForm f m ->
   valClause c m.
 Proof.
-case=>/= {}f.
-- by move=>{}c Hc; apply: clause_set_clause_true.
-move=>c1 c2 l H1 H2 Hf.
-rewrite /valClause has_cat.
-move: (clause_set_clause_true _ _ _ H1 Hf)=>/= Hl1.
-move: (clause_set_clause_true _ _ _ H2 Hf)=>/= Hl2.
-case/orP: Hl1; last by rewrite /valClause=>->.
-case/orP: Hl2.
-- by rewrite valLitNot=>/[swap]->.
-by rewrite /valClause=>->; rewrite orbT.
+case=>/= [{}f {}c Hc|{c}f c1 c2 l H1 H2 Hf].
+- by apply: clause_set_clause_true.
+rewrite valClause_cat.
+move: (clause_set_clause_true _ _ _ H1 Hf)=>{H1}/=.
+case/orP=>[Hl|->] //.
+move: (clause_set_clause_true _ _ _ H2 Hf)=>{H2 Hf}/=.
+case/orP=>[|->]; last by rewrite orbT.
+by rewrite valLitNot Hl.
 Qed.
 
 Corollary resolvent_bot_unsat f : resolvent f [::] -> unsat f.
@@ -66,8 +58,8 @@ Lemma resolvent_seq_sound f c m :
   valClause c m.
 Proof.
 elim=>{}f {}c; first by exact: resolvent_sound.
-move=>c' Hc _ IH Hf.
-apply: IH; rewrite /valForm /= in Hf *; rewrite Hf andbT.
+move=>c' Hc _ /= IH Hf.
+apply: IH; rewrite Hf andbT.
 by apply: (resolvent_sound _ f).
 Qed.
 
@@ -85,8 +77,8 @@ Definition is_proof_step (context : form) (ut : proof_step) : bool :=
   match ut with
   | proof_mem c => mem_form context c
   | proof_cut l c1 c2 =>
-    mem_form context (neg l::c1) &&
-    mem_form context (pos l::c2)
+      mem_form context (neg l::c1) &&
+      mem_form context (pos l::c2)
   end.
 
 Lemma is_proof_step_sound' ctx ut :
