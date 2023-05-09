@@ -7,4 +7,5 @@ theories/decset.v
 theories/model.v
 theories/cnf.v
 theories/constable.v
+theories/saturne_res.v
 theories/saturne.v

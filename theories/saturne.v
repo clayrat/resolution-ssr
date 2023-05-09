@@ -1,3 +1,4 @@
+From Equations Require Import Equations.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
 From resssr Require Import prelude decset model.
 
@@ -28,132 +29,116 @@ Definition eval_form (f : form) (v : assign) : bool :=
 
 Notation "[| p | e |]" := (eval_form p e).
 
-Definition mem_form (f : form) (c : clause) : bool := has (eqset c) f.
+Definition sat (p: form) : Prop :=
+  exists (a : assign), [| p | a |].
 
-Lemma in_mem_form f c : c \in f -> mem_form f c.
-Proof. by move=>H; apply/hasP; exists c=>//; apply: eqset_id. Qed.
+(** Problem unsatisfiability *)
+Definition unsat (p: form) : Prop := ~ sat p.
 
-Lemma eval_true_forall f m c : valForm f m -> mem_form f c -> valClause c m.
+(** The empty problem is satisfiable *)
+Lemma smallest_sat_problem : sat [::].
+Proof. by exists [::]. Qed.
+
+(** The smallest problem containing the empty clause is unsatisfiable *)
+Lemma smallest_unsat_problem: unsat [::[::]].
+Proof. by case. Qed.
+
+Lemma sat_aff c p : sat (c::p) -> sat p.
+Proof. by case=>/= x /andP [_ H]; exists x. Qed.
+
+Lemma sol_sat p a : [| p | a |] -> sat p.
+Proof. by move=>H; exists a. Qed.
+
+Lemma sat_add_sol c p a : [| c::p | a |] -> [| p | a |].
+Proof. by move=>/= /andP []. Qed.
+
+(** Remove a literal from a clause *)
+Fixpoint remove_lit l (c : clause) :=
+  if c is x::rest then
+    if x == l then rest
+              else x::(remove_lit l rest)
+  else [::].
+
+(** Simplify a problem by propagating a literal *)
+Fixpoint propagate (l : lit) (p : form) : form :=
+  if p is c::rest then
+    if l \in c
+    then propagate l rest
+    else (remove_lit (notLit l) c)::(propagate l rest)
+  else [::].
+
+(** Naive size of a problem (number of literals) *)
+Fixpoint problem_size (p: form) :=
+  if p is c::rest then size c + problem_size rest else 0.
+
+(** Removing a literal from a clause reduces its size *)
+Lemma remove_lit_variant (l : lit) (c : clause) : size (remove_lit l c) <= size c.
+Proof. by elim: c=>//= l' c IH; case: eqVneq. Qed.
+
+Lemma propagate_variant (l : lit) (p : form) : problem_size (propagate l p) <= problem_size p.
 Proof.
-elim: f=>//=c' f IH.
-case/andP=>Hc /IH {}IH; case/orP.
-- by move/valClause_equiv=>->.
-by apply: IH.
+elim: p=>//=c p' IH; case: ifP=>/= _.
+- by apply: (leq_trans IH); exact: leq_addl.
+by apply: leq_add=>//; exact: remove_lit_variant.
 Qed.
 
-Definition sat (f : form) : Prop := exists v : val, valForm f v.
-
-Definition unsat (f : form) := ~ sat f.
-
-Variant resolvent : form -> clause -> Prop :=
-  | resolvent_mem (f : form) (c : clause) : mem_form f c -> resolvent f c
-  | resolvent_cut (f : form) (c1 c2 : clause) (l : lit) :
-    mem_form f (l::c1) ->
-    mem_form f (notLit l::c2) -> resolvent f (c1 ++ c2).
-
-Corollary clause_set_clause_true m f c :
-  mem_form f c ->
-  valForm f m ->
-  valClause c m.
-Proof.  by move/[swap]/eval_true_forall; apply. Qed.
-
-Theorem resolvent_sound m f c :
-  resolvent f c ->
-  valForm f m ->
-  valClause c m.
+Lemma eval_clause_remove_neg l c a : l \notin c ->
+  eval_clause (remove_lit (notLit l) c) a ->
+  eval_clause c (l :: a).
 Proof.
-case=>/= {}f.
-- by move=>{}c Hc; apply: clause_set_clause_true.
-move=>c1 c2 l H1 H2 Hf.
-rewrite /valClause has_cat.
-move: (clause_set_clause_true _ _ _ H1 Hf)=>/= Hl1.
-move: (clause_set_clause_true _ _ _ H2 Hf)=>/= Hl2.
-case/orP: Hl1; last by rewrite /valClause=>->.
-case/orP: Hl2.
-- by rewrite valLitNot=>/[swap]->.
-by rewrite /valClause=>->; rewrite orbT.
+elim: c=>//= l' c IH; rewrite !inE negb_or; case/andP=>/negbTE Hl /IH {}IH.
+rewrite (eq_sym _ l) {}Hl /=.
+case: eqVneq=>[->|_] /= H.
+- by apply/orP; right; apply: eval_clause_weaken.
+by case/orP: H=>[->|H] //; apply/orP; right; apply: IH.
 Qed.
 
-Corollary resolvent_bot_unsat f : resolvent f [::] -> unsat f.
-Proof. by move=>H [v Hv]; move: (resolvent_sound _  _ _ H Hv). Qed.
+(** Solutions to a SAT problem *)
+Definition solutions : Type := seq assign.
 
-Inductive resolvent_seq : form -> clause -> Prop :=
-  | resolvent_seq_base f c :
-    resolvent f c -> resolvent_seq f c
-  | resolvent_seq_step f c c' :
-    resolvent f c ->
-    resolvent_seq (c::f) c' ->
-    resolvent_seq f c'.
-
-Lemma resolvent_seq_sound f c m :
-  resolvent_seq f c ->
-  valForm f m ->
-  valClause c m.
+(** Resolution algorithm *)
+Equations? resolve (p: form) : solutions by wf (problem_size p) lt :=
+resolve  [::]         => [::[::]];
+resolve ([::]   ::_)  => [::];
+resolve ((l::cc)::pp) => let p1 := propagate l pp in
+                         let p2 := propagate (notLit l) (cc::pp) in
+                         let s1 := map (cons l) (resolve p1) in
+                         let s2 := map (cons (notLit l)) (resolve p2) in
+                         s1 ++ s2.
 Proof.
-elim=>{}f {}c; first by exact: resolvent_sound.
-move=>c' Hc _ IH Hf.
-apply: IH; rewrite /valForm /= in Hf *; rewrite Hf andbT.
-by apply: (resolvent_sound _ f).
+(* Termination Proof *)
+all: apply/ssrnat.ltP; rewrite addSn ltnS /p1 /p2.
+- by apply: leq_trans; [exact: propagate_variant | exact: leq_addl].
+case: ifP=>/= _.
+- by apply: leq_trans; [exact: propagate_variant | exact: leq_addl].
+apply: leq_add; last by exact: propagate_variant.
+by rewrite notLitK; exact: remove_lit_variant.
+Defined.
+
+Lemma propagate_correct a l p :
+  [| propagate l p | a |] -> [| p | l :: a |].
+Proof.
+elim: p=>//= c p IH; case: (boolP (_ \in _))=>/= Hl.
+- move=>H; apply/andP; split; last by apply: IH.
+  by apply: (eval_clause_in l)=>//; rewrite inE eqxx.
+by case/andP=>H1 H2; apply/andP; split; [apply: eval_clause_remove_neg | apply: IH].
 Qed.
 
-Variant proof_step : Type :=
-  | proof_mem of clause
-  | proof_cut of nat & clause & clause.
-
-Definition conclusion (ut : proof_step) : clause :=
-  match ut with
-  | proof_mem c => c
-  | proof_cut _ c1 c2 => c1 ++ c2
-  end.
-
-Definition is_proof_step (context : form) (ut : proof_step) : bool :=
-  match ut with
-  | proof_mem c => mem_form context c
-  | proof_cut l c1 c2 =>
-    mem_form context (neg l::c1) &&
-    mem_form context (pos l::c2)
-  end.
-
-Lemma is_proof_step_sound' ctx ut :
-  is_proof_step ctx ut ->
-  resolvent ctx (conclusion ut).
+Lemma resolve_correct (a : assign) (p : form) : a \in resolve p -> eval_form p a.
 Proof.
-case: ut=>[c|n c1 c2] /=; first by constructor.
-by case/andP=>H1 H2; apply: (resolvent_cut _ _ _ (neg n)).
+funelim (resolve p)=>//=; rewrite mem_cat; case/orP=>/mapP [x Hx {a}->]; rewrite inE.
+- by rewrite eqxx /=; apply/propagate_correct/H.
+move: (notLitE l)=>/negbTE -> /=.
+move: Hx; case: (boolP (notLit l \in _))=>/= Hnl.
+- rewrite /= Hnl in H0; move/H0=>{}H0.
+  apply/andP; split; last by apply: propagate_correct.
+  by apply/orP; right; apply: (eval_clause_in (notLit l))=>//; rewrite inE eqxx.
+rewrite /= (negbTE Hnl) in H0; rewrite notLitK in H0 *; move/H0=>/=; case/andP=>{}H0 H1.
+apply/andP; split; last by apply: propagate_correct.
+by apply/orP; right; apply: eval_clause_remove_neg=>//; rewrite notLitK.
 Qed.
 
-Corollary is_proof_step_sound ctx ut m :
-  is_proof_step ctx ut ->
-  valForm ctx m ->
-  valClause (conclusion ut) m.
-Proof. by move=>H; apply/resolvent_sound/is_proof_step_sound'. Qed.
-
-Fixpoint is_proof (context : form) (uts : seq proof_step) (c : clause) : bool :=
-  if uts is ut::uts' then
-    is_proof_step context ut &&
-    is_proof ((conclusion ut)::context) uts' c
-  else mem_form context c.
-
-Lemma is_proof_sound' uts ctx c :
-  is_proof ctx uts c ->
-  resolvent_seq ctx c.
-Proof.
-elim: uts ctx=>/= [ctx H | ut uts IH ctx /andP [H1 H2]]; first by do 2!constructor.
-apply: (resolvent_seq_step _ (conclusion ut)).
-- by apply: is_proof_step_sound'.
-by apply: IH.
-Qed.
-
-Corollary is_proof_sound uts ctx c m :
-  is_proof ctx uts c ->
-  valForm ctx m ->
-  valClause c m.
-Proof. by move=>H; apply/resolvent_seq_sound/is_proof_sound'/H. Qed.
-
-Theorem resolvent_seq_bot_unsat f : resolvent_seq f [::] -> unsat f.
-Proof.
-move=>Hres [m Hm].
-by move: (resolvent_seq_sound _ _ m Hres Hm).
-Qed.
+(* doesn't seem to hold *)
+(* Lemma resolve_complete (a:assign) (p:form) : eval_form p a -> a \in resolve p. *)
 
 End Saturne.
