@@ -1,6 +1,6 @@
 From Equations Require Import Equations.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
-From resssr Require Import prelude decset model.
+From resssr Require Import prelude model.
 
 Section Saturne.
 
@@ -52,19 +52,12 @@ Proof. by move=>H; exists a. Qed.
 Lemma sat_add_sol c p a : [| c::p | a |] -> [| p | a |].
 Proof. by move=>/= /andP []. Qed.
 
-(** Remove a literal from a clause *)
-Fixpoint remove_lit l (c : clause) :=
-  if c is x::rest then
-    if x == l then rest
-              else x::(remove_lit l rest)
-  else [::].
-
 (** Simplify a problem by propagating a literal *)
 Fixpoint propagate (l : lit) (p : form) : form :=
   if p is c::rest then
     if l \in c
     then propagate l rest
-    else (remove_lit (notLit l) c)::(propagate l rest)
+    else rem (notLit l) c :: propagate l rest
   else [::].
 
 (** Naive size of a problem (number of literals) *)
@@ -72,8 +65,8 @@ Fixpoint problem_size (p: form) :=
   if p is c::rest then size c + problem_size rest else 0.
 
 (** Removing a literal from a clause reduces its size *)
-Lemma remove_lit_variant (l : lit) (c : clause) : size (remove_lit l c) <= size c.
-Proof. by elim: c=>//= l' c IH; case: eqVneq. Qed.
+Lemma remove_lit_variant (l : lit) (c : clause) : size (rem l c) <= size c.
+Proof. by apply/size_subseq/rem_subseq. Qed.
 
 Lemma propagate_variant (l : lit) (p : form) : problem_size (propagate l p) <= problem_size p.
 Proof.
@@ -83,7 +76,7 @@ by apply: leq_add=>//; exact: remove_lit_variant.
 Qed.
 
 Lemma eval_clause_remove_neg l c a : l \notin c ->
-  eval_clause (remove_lit (notLit l) c) a ->
+  eval_clause (rem (notLit l) c) a ->
   eval_clause c (l :: a).
 Proof.
 elim: c=>//= l' c IH; rewrite !inE negb_or; case/andP=>/negbTE Hl /IH {}IH.
