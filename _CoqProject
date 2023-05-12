@@ -9,3 +9,4 @@ theories/cnf.v
 theories/constable.v
 theories/saturne_res.v
 theories/saturne.v
+theories/saturne_uniq.v
